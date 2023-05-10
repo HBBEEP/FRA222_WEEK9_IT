@@ -49,7 +49,12 @@ DMA_HandleTypeDef hdma_usart2_tx;
 uint8_t RxBuffer[20];
 uint8_t TxBuffer[40];
 uint8_t state = 0;
-uint16_t sysHz = 10;
+int16_t sysHz = 10;
+uint8_t ledSwitch = 1;
+uint8_t buttonStateBf = 1;
+uint8_t buttonStateAf = 1;
+uint8_t buttonLogic = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,8 +68,10 @@ void UARTInterruptConfig();
 void UARTDMAConfig();
 void homePage();
 void ledPage();
-void buttonPage();
+void buttonPageP();
+void buttonPageUp();
 void handleState();
+void buttonStatus();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,7 +120,16 @@ int main(void) {
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
-		DummyTask();
+		if (ledSwitch) {
+			DummyTask();
+		} else {
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+		}
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		if (state == 2) {
+			buttonStatus();
+		}
+
 	}
 	/* USER CODE END 3 */
 }
@@ -176,9 +192,9 @@ static void MX_USART2_UART_Init(void) {
 
 	/* USER CODE END USART2_Init 1 */
 	huart2.Instance = USART2;
-	huart2.Init.BaudRate = 115200;
+	huart2.Init.BaudRate = 921600;
 	huart2.Init.WordLength = UART_WORDLENGTH_8B;
-	huart2.Init.StopBits = UART_STOPBITS_1;
+	huart2.Init.StopBits = UART_STOPBITS_2;
 	huart2.Init.Parity = UART_PARITY_NONE;
 	huart2.Init.Mode = UART_MODE_TX_RX;
 	huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
@@ -267,10 +283,11 @@ void handleState() {
 			ledPage();
 		} else if (RxBuffer[0] == '1') {
 			state += 2;
-			buttonPage();
+			buttonPageUp();
 		} else {
 			uint8_t text6[41] = "Error Type of Input : Try Again\r\n";
-			HAL_UART_Transmit(&huart2, text6, 33, 10);
+			//HAL_UART_Transmit(&huart2, text6, 33, 10);
+			HAL_UART_Transmit_DMA(&huart2, text6, 33);
 		}
 		// statements
 		break;
@@ -278,19 +295,32 @@ void handleState() {
 
 		if (RxBuffer[0] == 'a') {
 			sysHz += 1;
-			uint8_t text6[40] = "<Speed Up Init> | Current Hz : %s\r\n";
-			// HAL_UART_Transmit(&huart2, text6, 8, 10);
-			HAL_UART_Transmit(&huart2, spdTxt, strlen((char*)spdTxt));
+			uint8_t spuTxt[33];
+			sprintf((char*) spuTxt, "<Speed Up> | Current Hz : %d\r\n", sysHz);
+			HAL_UART_Transmit(&huart2, spuTxt, strlen((char*) spuTxt), 10);
 		} else if (RxBuffer[0] == 's') {
-			if (sysHz >= 0)
-			{
+			if (sysHz > 0) {
 				sysHz -= 1;
+				uint8_t spdTxt[35];
+				sprintf((char*) spdTxt, "<Speed Down> | Current Hz : %d\r\n",
+						sysHz);
+				HAL_UART_Transmit(&huart2, spdTxt, strlen((char*) spdTxt), 10);
+			} else {
+				uint8_t text6[64] =
+						"Error Minus Hz Is Not Available: Please Increase The Frequency\r\n";
+				HAL_UART_Transmit(&huart2, text6, 64, 10);
 			}
 
-			uint8_t text6[8] = "spddw\r\n";
-			HAL_UART_Transmit(&huart2, text6, 8, 10);
 		} else if (RxBuffer[0] == 'd') {
-			//state += 1;
+			if (ledSwitch == 1) {
+				uint8_t text6[19] = "<Turn Off LED>:(\r\n";
+				HAL_UART_Transmit(&huart2, text6, 19, 10);
+				ledSwitch = 0;
+			} else {
+				uint8_t text6[19] = "<Turn On LED> :)\r\n";
+				HAL_UART_Transmit(&huart2, text6, 19, 10);
+				ledSwitch = 1;
+			}
 		} else if (RxBuffer[0] == 'x') {
 			state -= 1;
 			homePage();
@@ -302,12 +332,13 @@ void handleState() {
 	case 2:
 
 		if (RxBuffer[0] == 'x') {
-			state -= 1;
+			state -= 2;
 			homePage();
 		} else {
 			uint8_t text6[41] = "Error Type of Input : Try Again\r\n";
 			HAL_UART_Transmit(&huart2, text6, 33, 10);
 		}
+
 		break;
 
 	}
@@ -317,10 +348,10 @@ void homePage() {
 	uint8_t text2[38] = "*->Press 0 : LED CONTROL           *\r\n";
 	uint8_t text3[38] = "*->Press 1 : BUTTON STATUS         *\r\n";
 	uint8_t text4[38] = "************************************\r\n";
-	HAL_UART_Transmit(&huart2, text1, 38, 10);
-	HAL_UART_Transmit(&huart2, text2, 38, 10);
-	HAL_UART_Transmit(&huart2, text3, 38, 10);
-	HAL_UART_Transmit(&huart2, text4, 38, 10);
+	HAL_UART_Transmit(&huart2, text1, 38, 100);
+	HAL_UART_Transmit(&huart2, text2, 38, 100);
+	HAL_UART_Transmit(&huart2, text3, 38, 100);
+	HAL_UART_Transmit(&huart2, text4, 38, 100);
 }
 
 void ledPage() {
@@ -338,20 +369,42 @@ void ledPage() {
 	HAL_UART_Transmit(&huart2, text6, 38, 10);
 }
 
-void buttonPage() {
+void buttonPageP() {
 	uint8_t text1[38] = "***********BUTTON STATUS************\r\n";
 	uint8_t text2[38] = "* x : back                         *\r\n";
-	uint8_t text3[38] = "* MYSTATUS : BEEP                  *\r\n";
+	uint8_t text3[38] = "* Button Is Pressed                *\r\n";
 	uint8_t text4[38] = "************************************\r\n";
 	HAL_UART_Transmit(&huart2, text1, 38, 10);
 	HAL_UART_Transmit(&huart2, text2, 38, 10);
 	HAL_UART_Transmit(&huart2, text3, 38, 10);
 	HAL_UART_Transmit(&huart2, text4, 38, 10);
 }
+
+void buttonPageUp() {
+	uint8_t text1[38] = "***********BUTTON STATUS************\r\n";
+	uint8_t text2[38] = "* x : back                         *\r\n";
+	uint8_t text3[38] = "* Button Is Unpressed              *\r\n";
+	uint8_t text4[38] = "************************************\r\n";
+	HAL_UART_Transmit(&huart2, text1, 38, 10);
+	HAL_UART_Transmit(&huart2, text2, 38, 10);
+	HAL_UART_Transmit(&huart2, text3, 38, 10);
+	HAL_UART_Transmit(&huart2, text4, 38, 10);
+}
+
+void buttonStatus() {
+	buttonStateAf = HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin);
+	if (buttonStateAf == 0 && buttonStateBf == 1) {
+		buttonPageP();
+	}
+	if (buttonStateAf == 1 && buttonStateBf == 0) {
+		buttonPageUp();
+	}
+	buttonStateBf = buttonStateAf;
+}
 void DummyTask() {
 	static float timestamp = 0;
 	if (HAL_GetTick() >= timestamp) {
-		timestamp = HAL_GetTick() + (1000/sysHz); // 10 Hz
+		timestamp = HAL_GetTick() + (1000 / sysHz); // 10 Hz
 		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 	}
 }
