@@ -125,7 +125,6 @@ int main(void) {
 		} else {
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 		}
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		if (state == 2) {
 			buttonStatus();
 		}
@@ -287,7 +286,7 @@ void handleState() {
 		} else {
 			uint8_t text6[41] = "Error Type of Input : Try Again\r\n";
 			//HAL_UART_Transmit(&huart2, text6, 33, 10);
-			HAL_UART_Transmit_DMA(&huart2, text6, 33);
+			HAL_UART_Transmit(&huart2, text6, 33, 10);
 		}
 		// statements
 		break;
